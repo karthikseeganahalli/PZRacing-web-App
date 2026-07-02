@@ -124,6 +124,14 @@ footer {
   line-height: 1.5;
 }
 
+footer .disclaimer {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
 /* Phones */
 @media (max-width: 480px) {
   body { padding: 1.25rem 0.9rem calc(1.25rem + env(safe-area-inset-bottom)); }
