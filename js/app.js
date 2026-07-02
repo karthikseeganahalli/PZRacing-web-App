@@ -44,6 +44,9 @@ function renderSession(card, file, session) {
   const min = Math.floor(duration / 60);
   const sec = Math.round(duration % 60);
   const channels = header.analogChannels.filter((c) => c.enabled).map((c) => c.name);
+  const unreadable = header.analogChannels
+    .filter((c) => c.unreadable)
+    .map((c) => c.name || `AN${c.index}`);
   const baseName = file.name.replace(/\.ses$/i, '');
 
   card.innerHTML = `
@@ -57,6 +60,7 @@ function renderSession(card, file, session) {
       <div><dt>Samples</dt><dd>${records.length.toLocaleString()} @ 50 Hz</dd></div>
       <div><dt>Channels</dt><dd>${escapeHtml(channels.join(', ') || '—')}</dd></div>
     </dl>
+    ${unreadable.length ? `<p class="note">⚠ ${unreadable.length} channel${unreadable.length > 1 ? 's' : ''} (${escapeHtml(unreadable.join(', '))}) had unreadable calibration and ${unreadable.length > 1 ? 'were' : 'was'} skipped.</p>` : ''}
     <div class="actions">
       <button class="btn btn-primary" data-format="vbo">Download .VBO (RaceChrono)</button>
       <button class="btn" data-format="csv">Download .CSV</button>

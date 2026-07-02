@@ -87,16 +87,26 @@ function parseHeader(text) {
       const index = parseInt(body[1], 10);
       const parts = body.slice(3).split('/');
       // rawLo/rawHi/calLo/calHi/flag/name/?/unit/calLo2/calHi2/?/?
-      const enabled = parts[4] !== '0';
+      const flagEnabled = parts[4] !== '0';
+      const rawLo = parseFloat(parts[0]);
+      const rawHi = parseFloat(parts[1]);
+      const calLo = parseFloat(parts[2]);
+      const calHi = parseFloat(parts[3]);
+      // A channel the firmware marked active but whose calibration didn't parse
+      // (missing fields, or an unexpected/newer line layout) would otherwise
+      // export as NaN for every sample. Treat it as unreadable: exclude it from
+      // output (enabled = false) and flag it so the UI can report it.
+      const calValid = [rawLo, rawHi, calLo, calHi].every(Number.isFinite);
       header.analogChannels.push({
         index,
         name: (parts[5] || `AN${index}`).trim(),
         unit: (parts[7] || '').trim(),
-        rawLo: parseFloat(parts[0]),
-        rawHi: parseFloat(parts[1]),
-        calLo: parseFloat(parts[2]),
-        calHi: parseFloat(parts[3]),
-        enabled,
+        rawLo,
+        rawHi,
+        calLo,
+        calHi,
+        enabled: flagEnabled && calValid,
+        unreadable: flagEnabled && !calValid,
       });
     } else if (body.startsWith('FL=')) {
       const [lat, lon] = body.slice(3).split('/').map(parseFloat);
