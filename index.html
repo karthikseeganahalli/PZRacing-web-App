@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#101216">
+  <meta name="description" content="Convert PZRacing .SES data-logger sessions to RaceChrono-compatible .VBO or .CSV, entirely in your browser.">
+  <title>PZRacing SES Converter</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>PZRacing <span>SES Converter</span></h1>
+    <p>Convert PZRacing data-logger sessions to .VBO for RaceChrono&nbsp;Pro, or plain .CSV.
+       Everything runs in your browser — files never leave your device.</p>
+  </header>
+
+  <main>
+    <button type="button" id="drop-zone">
+      <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <path d="M12 3v12m0-12l-4 4m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round"/>
+      </svg>
+      <p class="dz-primary">Tap to choose .SES files</p>
+      <p class="dz-secondary">or drag &amp; drop them here</p>
+      <input type="file" id="file-input" accept=".ses,.SES" multiple hidden>
+    </button>
+
+    <div id="results"></div>
+  </main>
+
+  <footer>
+    <p>Import the .VBO in RaceChrono&nbsp;Pro: Sessions&nbsp;→&nbsp;+&nbsp;→&nbsp;Import&nbsp;session.</p>
+  </footer>
+
+  <script src="js/parser.js"></script>
+  <script src="js/exporters.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
