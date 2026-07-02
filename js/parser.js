@@ -30,7 +30,23 @@ function parseSES(buffer) {
 
   const colIdx = probe.indexOf('TIME;LAT;LON');
   if (colIdx === -1) {
-    throw new Error('Not a PZRacing .SES file (column list not found in header)');
+    // The channel-list line ("TIME;LAT;LON;…") is the one field we can't work
+    // without: it marks where the ASCII header ends and the binary body begins.
+    // Tailor the message to what the file looks like so the user knows why.
+    const looksLikeSes = /\*REV=|\*NAME=|VEHICLE=/.test(probe);
+    if (looksLikeSes) {
+      throw new Error(
+        'This looks like a PZRacing session, but the channel-list header line ' +
+        '("TIME;LAT;LON;…") is missing, so the start of the data can\'t be located. ' +
+        'The header is probably truncated or from an unsupported firmware revision. ' +
+        'Try re-exporting the .SES file from the logger.'
+      );
+    }
+    throw new Error(
+      'This doesn\'t look like a PZRacing .SES file: the required channel-list ' +
+      'header line ("TIME;LAT;LON;…") was not found. Make sure you selected a ' +
+      '.SES session file exported by the PZRacing logger (not a .vbo, .csv, or other file).'
+    );
   }
   const headerEnd = probe.indexOf('\r\n', colIdx) + 2;
   const headerText = probe.slice(0, headerEnd);
@@ -142,10 +158,21 @@ function calibrate(channel, raw) {
 }
 
 // Session start as a Date. PZRacing dates are DD/MM/YY (Italian).
+// DATE/TIME can be absent from the header; when a component is missing we fall
+// back to a fixed, valid base (2000-01-01 00:00:00) so exported timestamps stay
+// well-formed. Only the absolute wall-clock origin is arbitrary in that case —
+// relative sample times (and therefore lap timing) are unaffected.
 function sessionStartDate(header) {
-  const [d, m, y] = header.date.split('/').map(Number);
-  const [hh, mm, ss] = header.time.split(':').map(Number);
-  return new Date(2000 + y, m - 1, d, hh, mm, ss);
+  const [d, m, y] = (header.date || '').split('/').map(Number);
+  const [hh, mm, ss] = (header.time || '').split(':').map(Number);
+  return new Date(
+    Number.isFinite(y) ? 2000 + y : 2000,
+    Number.isFinite(m) ? m - 1 : 0,
+    Number.isFinite(d) ? d : 1,
+    Number.isFinite(hh) ? hh : 0,
+    Number.isFinite(mm) ? mm : 0,
+    Number.isFinite(ss) ? ss : 0
+  );
 }
 
 // Loaded as a plain script (no ES modules) so the app also works when
