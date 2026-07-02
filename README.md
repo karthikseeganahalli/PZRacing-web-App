@@ -1,5 +1,9 @@
 # PZRacing SES Converter
 
+> ⚠️ **Disclaimer:** This is a test/hobby project provided **as-is**, with no
+> warranty of any kind. The author accepts **no liability** for any use of this
+> tool or its output.
+
 A browser-based tool that converts **PZRacing** data-logger session files (`.SES`)
 into formats you can use elsewhere:
 
