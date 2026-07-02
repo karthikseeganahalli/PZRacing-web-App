@@ -14,35 +14,30 @@ into formats you can use elsewhere:
 Everything runs **entirely in your browser**. Files are parsed locally and never
 uploaded anywhere, so it works offline and keeps your telemetry private.
 
+**▶ Live app:** https://karthikseeganahalli.github.io/PZRacing-web-App/
+
 ## Usage
 
-1. Open the app (see hosting below, or open `index.html` directly).
+1. Open the [live app](https://karthikseeganahalli.github.io/PZRacing-web-App/),
+   or open `index.html` directly from disk.
 2. Tap **Choose .SES files** (or drag & drop on desktop).
 3. Review the session summary (rider, vehicle, track, duration, channels).
 4. Download **`.VBO`** for RaceChrono, or **`.CSV`**.
 
 To import into RaceChrono Pro: **Sessions → + → Import session**, then pick the `.vbo`.
 
-## Hosting on GitHub Pages
+## Running it yourself
 
-This is a static site with no build step. To publish it:
+This is a static site with no build step, so you can host or run it anywhere:
 
-1. Create a new GitHub repository and push these files (see below).
-2. In the repo, go to **Settings → Pages**.
-3. Under **Build and deployment**, set **Source = Deploy from a branch**,
-   **Branch = `main`**, folder **`/ (root)`**, and save.
-4. Your app will be live at `https://<your-username>.github.io/<repo-name>/`.
+- **Hosted:** already live via GitHub Pages at
+  https://karthikseeganahalli.github.io/PZRacing-web-App/ (deployed from `main`,
+  root folder).
+- **Locally:** clone the repo and open `index.html` directly, or serve the
+  folder — e.g. `python3 -m http.server` — then visit the printed URL.
 
-First push:
-
-```sh
-git init
-git add .
-git commit -m "PZRacing SES converter"
-git branch -M main
-git remote add origin https://github.com/<your-username>/<repo-name>.git
-git push -u origin main
-```
+To self-host your own copy on GitHub Pages: push the files to a repository, then
+enable **Settings → Pages → Deploy from a branch → `main` / `/ (root)`**.
 
 ## Project structure
 
