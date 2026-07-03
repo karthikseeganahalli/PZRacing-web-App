@@ -53,9 +53,122 @@ function parseSES(buffer) {
 
   const header = parseHeader(headerText);
   const bodyEnd = findBinaryEnd(bytes, headerEnd);
-  const records = parseRecords(buffer, headerEnd, bodyEnd);
+  const rawRecords = parseRecords(buffer, headerEnd, bodyEnd);
 
-  return { header, records };
+  // (1) Validate. Corruption, truncation and firmware summary footers show up as
+  // trailing records with physically impossible values. Drop the trailing run of
+  // invalid records, and count any that remain in the interior. This is a safety
+  // net independent of the *CLOSE FILE marker above, so unknown footer/corruption
+  // shapes are still caught rather than silently exported.
+  let validEnd = rawRecords.length;
+  while (validEnd > 0 && !isPlausibleRecord(rawRecords[validEnd - 1])) validEnd--;
+  const droppedTrailing = rawRecords.length - validEnd;
+  const records = rawRecords.slice(0, validEnd);
+  const interiorBad = records.reduce((n, r) => n + (isPlausibleRecord(r) ? 0 : 1), 0);
+
+  const footerText = bodyEnd < bytes.length
+    ? new TextDecoder('latin1').decode(bytes.subarray(bodyEnd))
+    : '';
+
+  const warnings = collectWarnings(header, records, {
+    droppedTrailing,
+    interiorBad,
+    leftoverBytes: (bodyEnd - headerEnd) % RECORD_SIZE,
+    footerText,
+  });
+
+  return { header, records, warnings };
+}
+
+// Hard sanity bounds for a single record. Only physically impossible values are
+// rejected, so legitimate pre-GPS-fix samples (lat/lon 0, speed 0) are never
+// mistaken for corruption.
+function isPlausibleRecord(r) {
+  return (
+    Number.isFinite(r.t) && r.t >= 0 && r.t < 6 * 3600 && // session under 6 h
+    Math.abs(r.lat) <= 90 && Math.abs(r.lon) <= 180 &&
+    r.speedGps >= -1 && r.speedGps <= 500 &&              // km/h
+    r.rpm >= 0 && r.rpm <= 30000
+  );
+}
+
+// Build human-readable warnings so anything the parser drops or distrusts is
+// surfaced to the user instead of silently affecting the export.
+function collectWarnings(header, records, diag) {
+  const warnings = [];
+  const plural = (n) => (n > 1 ? 's' : '');
+  const were = (n) => (n > 1 ? 'were' : 'was');
+
+  // Channels the firmware marked active but whose calibration didn't parse.
+  const unreadable = header.analogChannels
+    .filter((c) => c.unreadable)
+    .map((c) => c.name || `AN${c.index}`);
+  if (unreadable.length) {
+    warnings.push(
+      `${unreadable.length} channel${plural(unreadable.length)} (${unreadable.join(', ')}) ` +
+      `had unreadable calibration and ${were(unreadable.length)} skipped.`
+    );
+  }
+
+  // (3) Header vs output disagreement: real (named, non-placeholder) channels
+  // exist but none came through as active — a likely firmware-flag mismatch.
+  const named = header.analogChannels.filter(
+    (c) => c.name && !/^ANALOG\s*\d+$/i.test(c.name) && !/^AN\d+$/i.test(c.name)
+  );
+  const active = header.analogChannels.filter((c) => c.enabled);
+  if (named.length && active.length === 0) {
+    warnings.push(
+      `${named.length} named channel${plural(named.length)} found ` +
+      `(${named.map((c) => c.name).join(', ')}) but none are marked active — ` +
+      `possible firmware-version mismatch; channels were not exported.`
+    );
+  }
+
+  // (1) Records dropped/flagged by validation.
+  if (diag.droppedTrailing > 0) {
+    warnings.push(
+      `${diag.droppedTrailing} trailing record${plural(diag.droppedTrailing)} had implausible ` +
+      `values and ${were(diag.droppedTrailing)} dropped (likely a firmware summary footer or truncated data).`
+    );
+  }
+  if (diag.interiorBad > 0) {
+    warnings.push(
+      `${diag.interiorBad} record${plural(diag.interiorBad)} in the session contain implausible ` +
+      `values; the data may be partially corrupt.`
+    );
+  }
+  if (diag.leftoverBytes > 0) {
+    warnings.push(
+      `${diag.leftoverBytes} leftover byte${plural(diag.leftoverBytes)} after the last complete ` +
+      `record ${were(diag.leftoverBytes)} ignored.`
+    );
+  }
+
+  // (2) Cross-check computed peaks against the logger's own summary footer, which
+  // reports SP MAX / RPM MAX per lap. The test is one-directional: a raw sample
+  // peak can legitimately sit *above* the device's filtered peak (e.g. a single
+  // ignition-pickup RPM spike), so only a computed peak well *below* what the
+  // device recorded is meaningful — it means the export is missing data.
+  if (diag.footerText && records.length) {
+    const reportedMax = (re) => {
+      const vals = [...diag.footerText.matchAll(re)].map((m) => parseFloat(m[1]));
+      return vals.length ? Math.max(...vals) : NaN;
+    };
+    const undershoot = (label, reported, computed, fmt) => {
+      if (reported > 0 && computed < reported * 0.85) {
+        warnings.push(
+          `Computed max ${label} (${fmt(computed)}) is well below the logger's reported ` +
+          `${fmt(reported)} — the export may be missing data.`
+        );
+      }
+    };
+    const kmh = (v) => `${v.toFixed(1)} km/h`;
+    const rpm = (v) => `${Math.round(v)} rpm`;
+    undershoot('speed', reportedMax(/SP MAX:\s*([\d.]+)/g), Math.max(...records.map((r) => r.speedGps)), kmh);
+    undershoot('RPM', reportedMax(/RPM MAX:\s*(\d+)/g), Math.max(...records.map((r) => r.rpm)), rpm);
+  }
+
+  return warnings;
 }
 
 // REV 6.3 appends an ASCII summary footer ("*CLOSE FILE:USB CON." followed by
