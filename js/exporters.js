@@ -64,6 +64,82 @@ function startFinishGate(header, records, halfWidthM = 20) {
   return [p1, p2];
 }
 
+// Fraction (0..1) along segment P0->P1 where it crosses segment A->B, or null if
+// they don't intersect. Planar coordinates (metres) — fine at track scale.
+function segmentCrossFraction(p0, p1, a, b) {
+  const rx = p1.x - p0.x, ry = p1.y - p0.y;
+  const sx = b.x - a.x, sy = b.y - a.y;
+  const denom = rx * sy - ry * sx;
+  if (denom === 0) return null; // parallel
+  const qpx = a.x - p0.x, qpy = a.y - p0.y;
+  const t = (qpx * sy - qpy * sx) / denom;
+  const u = (qpx * ry - qpy * rx) / denom;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? t : null;
+}
+
+// Lap analysis from GPS crossings of the start/finish gate. Works for any
+// firmware revision (needs only the header finish line + GPS records), unlike
+// the REV 6.3 "#LAP" footer. Returns overall max speed plus, when a finish line
+// and at least one completed lap exist, the lap count, best lap time, and the
+// average speed over that best lap.
+function computeLaps(header, records, minLapSeconds = 15) {
+  const maxSpeed = records.length ? Math.max(...records.map((r) => r.speedGps)) : 0;
+  const empty = { maxSpeed, lapCount: 0, bestLapTime: null, bestLapAvgSpeed: null };
+
+  const fl = header.finishLine;
+  const gate = startFinishGate(header, records);
+  if (!fl || !gate || records.length < 2) return empty;
+
+  const cosLat = Math.cos((fl.lat * Math.PI) / 180);
+  const toXY = (r) => ({ x: (r.lon - fl.lon) * 111320 * cosLat, y: (r.lat - fl.lat) * 111320 });
+  const A = toXY(gate[0]);
+  const B = toXY(gate[1]);
+
+  // Only trust points with an active GPS fix (skips pre-fix 0,0 samples).
+  const fixed = records.filter((r) => r.fix === 'A' && (Math.abs(r.lat) > 0.001 || Math.abs(r.lon) > 0.001));
+
+  const crossings = [];
+  for (let i = 1; i < fixed.length; i++) {
+    const frac = segmentCrossFraction(toXY(fixed[i - 1]), toXY(fixed[i]), A, B);
+    if (frac === null) continue;
+    const t = fixed[i - 1].t + frac * (fixed[i].t - fixed[i - 1].t);
+    // Debounce: ignore a re-crossing that happens implausibly soon after the last.
+    if (!crossings.length || t - crossings[crossings.length - 1] > minLapSeconds) crossings.push(t);
+  }
+  if (!crossings.length) return empty;
+
+  // Laps are the crossing-to-crossing intervals. PZRacing sometimes starts
+  // logging as the vehicle crosses the start/finish line, in which case the run
+  // from session start to the first crossing is also a full lap; but a recording
+  // that began mid-track leaves a short partial there instead. Count the leading
+  // segment only when its duration is consistent with the crossing-to-crossing
+  // laps. The partial after the last crossing is always the in-lap and dropped.
+  const boundaries = [...crossings];
+  const interior = crossings.slice(1).map((t, i) => t - crossings[i]);
+  const lead = crossings[0] - fixed[0].t;
+  if (interior.length) {
+    const lo = Math.min(...interior);
+    const hi = Math.max(...interior);
+    if (lead >= 0.9 * lo && lead <= 1.25 * hi) boundaries.unshift(fixed[0].t);
+  } else if (lead >= minLapSeconds) {
+    boundaries.unshift(fixed[0].t);
+  }
+
+  const laps = [];
+  for (let i = 1; i < boundaries.length; i++) {
+    laps.push({ start: boundaries[i - 1], end: boundaries[i], time: boundaries[i] - boundaries[i - 1] });
+  }
+  if (!laps.length) return empty;
+
+  const best = laps.reduce((a, b) => (b.time < a.time ? b : a));
+  const inBest = records.filter((r) => r.t >= best.start && r.t <= best.end);
+  const bestLapAvgSpeed = inBest.length
+    ? inBest.reduce((s, r) => s + r.speedGps, 0) / inBest.length
+    : null;
+
+  return { maxSpeed, lapCount: laps.length, bestLapTime: best.time, bestLapAvgSpeed, laps };
+}
+
 // VBO time-of-day: HHMMSS.SS (UTC-agnostic; RaceChrono treats it as wall time)
 function vboTime(startDate, tSeconds) {
   const ms = startDate.getTime() + tSeconds * 1000;

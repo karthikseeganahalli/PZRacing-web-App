@@ -45,6 +45,8 @@ function renderSession(card, file, session) {
   const sec = Math.round(duration % 60);
   const channels = header.analogChannels.filter((c) => c.enabled).map((c) => c.name);
   const warnings = session.warnings || [];
+  const laps = computeLaps(header, records);
+  const kmh = (v) => (v != null ? `${v.toFixed(1)} km/h` : '—');
   const baseName = file.name.replace(/\.ses$/i, '');
 
   card.innerHTML = `
@@ -55,6 +57,10 @@ function renderSession(card, file, session) {
       <div><dt>Track</dt><dd>${escapeHtml(header.track || '—')}</dd></div>
       <div><dt>Date</dt><dd>${escapeHtml(header.date)} ${escapeHtml(header.time)}</dd></div>
       <div><dt>Duration</dt><dd>${min}:${String(sec).padStart(2, '0')}</dd></div>
+      <div><dt>Laps</dt><dd>${laps.lapCount || '—'}</dd></div>
+      <div><dt>Best lap</dt><dd>${laps.bestLapTime != null ? fmtLapTime(laps.bestLapTime) : '—'}</dd></div>
+      <div><dt>Max speed</dt><dd>${laps.maxSpeed ? kmh(laps.maxSpeed) : '—'}</dd></div>
+      <div><dt>Avg speed (best lap)</dt><dd>${kmh(laps.bestLapAvgSpeed)}</dd></div>
       <div><dt>Samples</dt><dd>${records.length.toLocaleString()} @ 50 Hz</dd></div>
       <div><dt>Channels</dt><dd>${escapeHtml(channels.join(', ') || '—')}</dd></div>
     </dl>
@@ -71,6 +77,13 @@ function renderSession(card, file, session) {
   card.querySelector('[data-format="csv"]').addEventListener('click', () => {
     download(`${baseName}.csv`, toCSV(session), 'text/csv');
   });
+}
+
+// Lap time as m:ss.hh (e.g. 110.63 s -> "1:50.63").
+function fmtLapTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec - m * 60;
+  return `${m}:${s.toFixed(2).padStart(5, '0')}`;
 }
 
 function download(filename, content, mime) {
