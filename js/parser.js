@@ -52,9 +52,26 @@ function parseSES(buffer) {
   const headerText = probe.slice(0, headerEnd);
 
   const header = parseHeader(headerText);
-  const records = parseRecords(buffer, headerEnd);
+  const bodyEnd = findBinaryEnd(bytes, headerEnd);
+  const records = parseRecords(buffer, headerEnd, bodyEnd);
 
   return { header, records };
+}
+
+// REV 6.3 appends an ASCII summary footer ("*CLOSE FILE:USB CON." followed by
+// "#LAP…" lines) after the binary records. Without trimming it, those bytes get
+// read as bogus 52-byte records. Return the offset where the footer begins, or
+// the end of the buffer if there is none (e.g. REV 4.4, which has no footer).
+function findBinaryEnd(bytes, offset) {
+  const marker = '*CLOSE FILE'; // ASCII; bytes map 1:1 to char codes
+  outer: for (let i = offset; i <= bytes.length - marker.length; i++) {
+    if (bytes[i] !== 0x2a) continue; // '*'
+    for (let j = 1; j < marker.length; j++) {
+      if (bytes[i + j] !== marker.charCodeAt(j)) continue outer;
+    }
+    return i;
+  }
+  return bytes.length;
 }
 
 function parseHeader(text) {
@@ -86,8 +103,13 @@ function parseHeader(text) {
     } else if (/^A[1-8]=/.test(body)) {
       const index = parseInt(body[1], 10);
       const parts = body.slice(3).split('/');
-      // rawLo/rawHi/calLo/calHi/flag/name/?/unit/calLo2/calHi2/?/?
-      const flagEnabled = parts[4] !== '0';
+      // rawLo/rawHi/calLo/calHi/flag/name/?/unit/calLo2/calHi2/active/?
+      // The reliable "logged" flag is the 11th field (parts[10] === '1'), which
+      // holds across firmware revisions. Older firmware (REV 4.4) also set the
+      // 5th field (parts[4]) to '4' for active channels, but REV 6.3 leaves it
+      // '0' for every channel, so parts[4] alone silently drops all channels.
+      // Fall back to the old heuristic only when parts[10] is absent.
+      const flagEnabled = parts[10] !== undefined ? parts[10] === '1' : parts[4] !== '0';
       const rawLo = parseFloat(parts[0]);
       const rawHi = parseFloat(parts[1]);
       const calLo = parseFloat(parts[2]);
@@ -120,8 +142,8 @@ function parseHeader(text) {
   return header;
 }
 
-function parseRecords(buffer, offset) {
-  const count = Math.floor((buffer.byteLength - offset) / RECORD_SIZE);
+function parseRecords(buffer, offset, end = buffer.byteLength) {
+  const count = Math.floor((end - offset) / RECORD_SIZE);
   const dv = new DataView(buffer);
   const records = new Array(count);
 
