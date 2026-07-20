@@ -23,6 +23,7 @@
 
 const RECORD_SIZE = 52;
 const TICK_SECONDS = 0.01;
+const MPH_TO_KMH = 1.60934;
 
 function parseSES(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -55,6 +56,17 @@ function parseSES(buffer) {
   const bodyEnd = findBinaryEnd(bytes, headerEnd);
   const rawRecords = parseRecords(buffer, headerEnd, bodyEnd);
 
+  // Speed is stored in the unit the logger was configured for (km/h or mph).
+  // Normalise everything to km/h up front so all downstream code — validation,
+  // lap analysis, VBO ("velocity kmh"), CSV — stays unit-correct without change.
+  if (header.speedUnit === 'M') {
+    for (const r of rawRecords) {
+      r.speedGps *= MPH_TO_KMH;
+      r.speed1 *= MPH_TO_KMH;
+      r.speed2 *= MPH_TO_KMH;
+    }
+  }
+
   // (1) Validate. Corruption, truncation and firmware summary footers show up as
   // trailing records with physically impossible values. Drop the trailing run of
   // invalid records, and count any that remain in the interior. This is a safety
@@ -75,6 +87,7 @@ function parseSES(buffer) {
     interiorBad,
     leftoverBytes: (bodyEnd - headerEnd) % RECORD_SIZE,
     footerText,
+    speedUnit: header.speedUnit,
   });
 
   return { header, records, warnings };
@@ -98,6 +111,12 @@ function collectWarnings(header, records, diag) {
   const warnings = [];
   const plural = (n) => (n > 1 ? 's' : '');
   const were = (n) => (n > 1 ? 'were' : 'was');
+
+  // Speed logged in mph and normalised to km/h — tell the user so a converted
+  // value is never mistaken for the original reading.
+  if (diag.speedUnit === 'M') {
+    warnings.push('Speeds were logged in mph and converted to km/h in all outputs.');
+  }
 
   // Channels the firmware marked active but whose calibration didn't parse.
   const unreadable = header.analogChannels
@@ -164,7 +183,10 @@ function collectWarnings(header, records, diag) {
     };
     const kmh = (v) => `${v.toFixed(1)} km/h`;
     const rpm = (v) => `${Math.round(v)} rpm`;
-    undershoot('speed', reportedMax(/SP MAX:\s*([\d.]+)/g), Math.max(...records.map((r) => r.speedGps)), kmh);
+    // The footer's SP MAX is in the logger's unit; convert to km/h to match the
+    // (already normalised) record speeds before comparing.
+    const spFactor = diag.speedUnit === 'M' ? MPH_TO_KMH : 1;
+    undershoot('speed', reportedMax(/SP MAX:\s*([\d.]+)/g) * spFactor, Math.max(...records.map((r) => r.speedGps)), kmh);
     undershoot('RPM', reportedMax(/RPM MAX:\s*(\d+)/g), Math.max(...records.map((r) => r.rpm)), rpm);
   }
 
@@ -196,6 +218,7 @@ function parseHeader(text) {
     date: '',
     time: '',
     track: '',
+    speedUnit: 'K', // 'K' = km/h, 'M' = mph (from the *SP GPS unit field)
     analogChannels: [], // { index, name, unit, rawLo, rawHi, calLo, calHi, enabled }
     finishLine: null,
     splits: [],
@@ -243,6 +266,10 @@ function parseHeader(text) {
         enabled: flagEnabled && calValid,
         unreadable: flagEnabled && !calValid,
       });
+    } else if (body.startsWith('SP GPS=')) {
+      // *SP GPS=flag/UNIT/calLo/calHi/... — UNIT is 'K' (km/h) or 'M' (mph).
+      // This is the unit the GPS speed (and wheel speeds) are stored in.
+      header.speedUnit = (body.slice(7).split('/')[1] || 'K').trim().toUpperCase();
     } else if (body.startsWith('FL=')) {
       const [lat, lon] = body.slice(3).split('/').map(parseFloat);
       header.finishLine = { lat, lon };
