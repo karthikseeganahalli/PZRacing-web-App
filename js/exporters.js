@@ -157,6 +157,9 @@ function toVBO(session) {
   const { header, records } = session;
   const start = sessionStartDate(header);
   const channels = activeChannels(header);
+  // The VBO velocity column is defined as km/h, so convert if the session was
+  // logged in mph. (RaceChrono then displays whatever unit the app is set to.)
+  const spF = header.speedUnit === 'M' ? MPH_TO_KMH : 1;
 
   const chanNames = channels.map((c) => c.name.toLowerCase().replace(/\s+/g, '_'));
   const extraNames = ['rpm', 'accel_x', 'accel_y', 'accel_z', 'voltage', ...chanNames];
@@ -211,7 +214,7 @@ function toVBO(session) {
       vboTime(start, r.t),
       fmtLat(latToMin(r.lat)),
       fmtLon(lonToMin(r.lon)),
-      pad(r.speedGps, 7, 3),
+      pad(r.speedGps * spF, 7, 3),
       pad(r.heading, 6, 2),
       '+' + pad(0, 9, 2),
       String(r.rpm),
@@ -237,7 +240,7 @@ function toCSV(session) {
     'utc_time',
     'latitude',
     'longitude',
-    'speed_gps_kmh',
+    `speed_gps_${header.speedUnit === 'M' ? 'mph' : 'kmh'}`,
     'heading_deg',
     'rpm',
     'accel_x_g',

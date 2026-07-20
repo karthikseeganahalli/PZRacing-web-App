@@ -56,16 +56,9 @@ function parseSES(buffer) {
   const bodyEnd = findBinaryEnd(bytes, headerEnd);
   const rawRecords = parseRecords(buffer, headerEnd, bodyEnd);
 
-  // Speed is stored in the unit the logger was configured for (km/h or mph).
-  // Normalise everything to km/h up front so all downstream code — validation,
-  // lap analysis, VBO ("velocity kmh"), CSV — stays unit-correct without change.
-  if (header.speedUnit === 'M') {
-    for (const r of rawRecords) {
-      r.speedGps *= MPH_TO_KMH;
-      r.speed1 *= MPH_TO_KMH;
-      r.speed2 *= MPH_TO_KMH;
-    }
-  }
+  // Speed is left in the unit the logger was configured for (header.speedUnit:
+  // 'K' km/h or 'M' mph). Outputs preserve it — CSV/UI label accordingly, and
+  // only the VBO exporter converts to km/h (its format mandates that unit).
 
   // (1) Validate. Corruption, truncation and firmware summary footers show up as
   // trailing records with physically impossible values. Drop the trailing run of
@@ -111,12 +104,6 @@ function collectWarnings(header, records, diag) {
   const warnings = [];
   const plural = (n) => (n > 1 ? 's' : '');
   const were = (n) => (n > 1 ? 'were' : 'was');
-
-  // Speed logged in mph and normalised to km/h — tell the user so a converted
-  // value is never mistaken for the original reading.
-  if (diag.speedUnit === 'M') {
-    warnings.push('Speeds were logged in mph and converted to km/h in all outputs.');
-  }
 
   // Channels the firmware marked active but whose calibration didn't parse.
   const unreadable = header.analogChannels
@@ -181,12 +168,12 @@ function collectWarnings(header, records, diag) {
         );
       }
     };
-    const kmh = (v) => `${v.toFixed(1)} km/h`;
+    const su = diag.speedUnit === 'M' ? 'mph' : 'km/h';
+    const spd = (v) => `${v.toFixed(1)} ${su}`;
     const rpm = (v) => `${Math.round(v)} rpm`;
-    // The footer's SP MAX is in the logger's unit; convert to km/h to match the
-    // (already normalised) record speeds before comparing.
-    const spFactor = diag.speedUnit === 'M' ? MPH_TO_KMH : 1;
-    undershoot('speed', reportedMax(/SP MAX:\s*([\d.]+)/g) * spFactor, Math.max(...records.map((r) => r.speedGps)), kmh);
+    // The footer's SP MAX and the record speeds are both in the logger's unit,
+    // so they compare directly with no conversion.
+    undershoot('speed', reportedMax(/SP MAX:\s*([\d.]+)/g), Math.max(...records.map((r) => r.speedGps)), spd);
     undershoot('RPM', reportedMax(/RPM MAX:\s*(\d+)/g), Math.max(...records.map((r) => r.rpm)), rpm);
   }
 

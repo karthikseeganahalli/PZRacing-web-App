@@ -46,7 +46,8 @@ function renderSession(card, file, session) {
   const channels = header.analogChannels.filter((c) => c.enabled).map((c) => c.name);
   const warnings = session.warnings || [];
   const laps = computeLaps(header, records);
-  const kmh = (v) => (v != null ? `${v.toFixed(1)} km/h` : '—');
+  const spUnit = header.speedUnit === 'M' ? 'mph' : 'km/h';
+  const spd = (v) => (v != null ? `${v.toFixed(1)} ${spUnit}` : '—');
   const baseName = file.name.replace(/\.ses$/i, '');
 
   card.innerHTML = `
@@ -59,8 +60,8 @@ function renderSession(card, file, session) {
       <div><dt>Duration</dt><dd>${min}:${String(sec).padStart(2, '0')}</dd></div>
       <div><dt>Laps</dt><dd>${laps.lapCount || '—'}</dd></div>
       <div><dt>Best lap</dt><dd>${laps.bestLapTime != null ? fmtLapTime(laps.bestLapTime) : '—'}</dd></div>
-      <div><dt>Max speed</dt><dd>${laps.maxSpeed ? kmh(laps.maxSpeed) : '—'}</dd></div>
-      <div><dt>Avg speed (best lap)</dt><dd>${kmh(laps.bestLapAvgSpeed)}</dd></div>
+      <div><dt>Max speed</dt><dd>${laps.maxSpeed ? spd(laps.maxSpeed) : '—'}</dd></div>
+      <div><dt>Avg speed (best lap)</dt><dd>${spd(laps.bestLapAvgSpeed)}</dd></div>
       <div><dt>Samples</dt><dd>${records.length.toLocaleString()} @ 50 Hz</dd></div>
       <div><dt>Channels</dt><dd>${escapeHtml(channels.join(', ') || '—')}</dd></div>
     </dl>
